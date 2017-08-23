@@ -75,7 +75,7 @@ rule alignment:
         # -P 3 = Phread+33
         # d 50 = min frag length 50bp
         # -D 600 = max frag length 600bp
-        samtools sort -f {output.bam} {output.bam}
+        samtools sort {output.bam}
         bamtools index -in {output.bam}
         """
 
