@@ -1,0 +1,6 @@
+
+        fastqc raw-se/test.fastq.gz
+        cd raw-se
+        rm test_fastqc.zip
+        mv test_fastqc.html ../qc/test_fastqc.html
+        

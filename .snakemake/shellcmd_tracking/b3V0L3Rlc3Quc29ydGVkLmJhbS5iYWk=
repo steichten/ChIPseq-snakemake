@@ -1,0 +1,11 @@
+
+        subread-align -t 1 -T 8 -P 3 -d 50 -D 600 -i /home/steve/genomes/TAIR10 -r cleaned/test.fastq.gz -o out/test.sorted.bam
+        # -t 1 = DNA-seq data
+        # -T 8 = 8 threads
+        # -P 3 = Phread+33
+        # d 50 = min frag length 50bp
+        # -D 600 = max frag length 600bp
+        samtools sort out/test.sorted.bam > out/test.sorted.bam.sorted
+	    mv out/test.sorted.bam.sorted out/test.sorted.bam
+        bamtools index -in out/test.sorted.bam
+        

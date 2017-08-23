@@ -1,0 +1,5 @@
+
+        trim_galore raw-se/test.fastq.gz
+        mv test_trimmed.fq.gz cleaned/test.fastq.gz
+        mv test.fastq.gz_trimming_report.txt logs/test.fastq.gz_trimming_report.txt
+        
