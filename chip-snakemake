@@ -1,0 +1,141 @@
+"""
+Author: S. Eichten
+Affiliation: Inari
+Aim: A simple Snakemake workflow to process single-end ChIP-seq data.
+Date: Nov 23 2017
+Run: snakemake -s Snakefile
+Latest modification:
+
+"""
+
+##########
+#hard-coded location of things - TO EDIT AS NEEDED
+##########
+
+CASES = ["H3K27me2_r1","H3K27me2_r2","H3K9me2_r1","H3K9me2_r2"]
+CONTROLS = ["frag-seq_r1","frag-seq_r2","frag-seq_r1","frag-seq_r2"]
+
+SAMPLES = glob_wildcards("raw/{S}.fastq.gz").S
+
+REFERENCE = "/home/steve/genomes_temp/Bd21Control/Bd21Control_SNPincorp_sgr1_genome" #path through to prefix of fasta/bt2 files
+TOTALCORES = 16 # check this via 'grep -c processor /proc/cpuinfo'
+
+##########
+#software requirements
+#fastqc
+#trim_galore (cutadapt)
+#samtools
+#bowtie2
+#bedtools
+#macs2 2.1.1.20160309
+##########
+
+#bash safe mode
+shell.executable("/bin/bash")
+shell.prefix("set -euo pipefail; ")
+#
+
+ruleorder: fastqc > trim > alignment > s2b > bamcompare > call_narrow_peaks > call_broad_peaks
+
+rule final:
+    input:
+        expand("cleaned/{sample}_trimmed.fq.gz", sample=SAMPLES),
+        expand("qc/{sample}_fastqc.html", sample=SAMPLES),
+        expand("qc/{sample}_fastqc.zip", sample=SAMPLES),
+        expand("out/{sample}/{sample}_trimmed.sorted.bam", sample=SAMPLES),
+        expand("out/{sample}/{sample}_trimmed.sorted.bai", sample=SAMPLES),
+        expand("out/{sample}_vs_{frag}.bamcompare.bigwig", zip,sample=CASES,frag=CONTROLS),
+        expand("out/{sample}/{sample}_vs_{frag}_peaks.narrowPeak",zip,sample=CASES,frag=CONTROLS),
+        expand("out/{sample}/{sample}_vs_{frag}_peaks.broadPeak",zip,sample=CASES,frag=CONTROLS),
+rule fastqc:
+    input:
+        r1="raw/{sample}.fastq.gz",
+    output:
+        q1="qc/{sample}_fastqc.html",
+        zip="qc/{sample}_fastqc.zip",
+    message: "Fastqc",
+    shell:
+        """
+        fastqc {input.r1} --outdir qc
+        """
+
+rule trim:
+    input:
+        r1="raw/{sample}.fastq.gz",
+    output:
+        r1="cleaned/{sample}_trimmed.fq.gz",
+        l1="cleaned/{sample}.fastq.gz_trimming_report.txt",
+    message: "Sequence trimming",
+    shell:
+        """
+        trim_galore {input.r1} --output_dir cleaned
+        """
+
+rule alignment:
+    input:
+        r1="cleaned/{sample}_trimmed.fq.gz",
+    output:
+        bam="out/{sample}/{sample}_trimmed.bam",
+    params:
+        ref=REFERENCE,
+        cores=TOTALCORES,
+    message: "bowtie2 alignment of {input.r1}",
+    shell:
+        """
+        bowtie2 -p {params.cores} -x {params.ref} -U {input.r1} | samtools view -bS - > {output.bam}
+        """
+
+rule s2b:
+    input:
+        bam="out/{sample}/{sample}_trimmed.bam",
+    output:
+        sorted="out/{sample}/{sample}_trimmed.sorted.bam",
+        bai="out/{sample}/{sample}_trimmed.sorted.bai",
+    params:
+        cores=TOTALCORES,
+    message: "sorting and indexing bam files",
+    shell:
+        """
+        samtools sort {input.bam} > {output.sorted}
+        samtools index -@ {params.cores} {output.sorted} {output.bai}
+        rm {input.bam}
+        """
+
+rule bamcompare:
+    input:
+        ip="out/{sample}/{sample}_trimmed.sorted.bam",
+        control="out/{frag}/{frag}_trimmed.sorted.bam",
+    output:
+        bigwig="out/{sample}_vs_{frag}.bamcompare.bigwig",
+    shell:
+        """
+        bamCompare -b1 {input.ip} -b2 {input.control} --skipNonCoveredRegions -p max -o {output.bigwig}
+        """
+
+rule call_narrow_peaks:
+    input:
+        ip="out/{sample}/{sample}_trimmed.sorted.bam",
+        control="out/{frag}/{frag}_trimmed.sorted.bam",
+    output:
+        bed="out/{sample}/{sample}_vs_{frag}_peaks.narrowPeak",
+    params:
+        name = "{sample}_vs_{frag}",
+    shell:
+        """
+        macs2 callpeak -t {input.ip} -c {input.control} -f BAM --nomodel --extsize 150 -n {params.name} -B -q 0.001 --outdir out/{wildcards.sample}
+
+        """
+rule call_broad_peaks:
+    input:
+        ip="out/{sample}/{sample}_trimmed.sorted.bam",
+        control="out/{frag}/{frag}_trimmed.sorted.bam",
+    output:
+        bed="out/{sample}/{sample}_vs_{frag}_peaks.broadPeak",
+    params:
+        name = "{sample}_vs_{frag}",
+    shell:
+        """
+        macs2 callpeak -t {input.ip} -c {input.control} -f BAM --broad --broad-cutoff 0.1 --nomodel --extsize 150 -n {params.name} -B -q 0.001 --outdir out/{wildcards.sample}
+
+        """
+
